@@ -1,0 +1,44 @@
+From 01058975992154514df25bc40382d5875ade1758 Mon Sep 17 00:00:00 2001
+From: Miro Mraz <mraz.miro@seznam.cz>
+Date: Mon, 18 May 2026 01:37:55 +0200
+Subject: [PATCH 1/2] Input: stmfts - extend post-reset delay to allow FTM5
+ firmware boot
+
+The previous 50 ms wait after deasserting reset is sufficient for FTS4
+chips but too short for FTM5 (FTM5CU56AA1BE on Pixel 4a, chip ID 0x4836).
+The FTM5 bootloader runs internal CRC verification of code+config flash
+sections before it transitions to app mode and begins ACKing I2C reads.
+On the tested hardware this consistently takes ~300 ms; 500 ms gives
+comfortable headroom.
+
+Symptom before this fix: probe failed with -ENXIO inside stmfts5_configure
+when i2c_smbus_read_i2c_block_data(0x86) was issued ~70 ms after reset
+deassert, before the chip's I2C state machine was up. ftrace
+function_graph with funcgraph-retval pinpointed the failing I2C
+transaction; dmesg showed only the dev_dbg 'initializing...' line.
+
+A future patch should replace the fixed sleep with a poll-until-ready
+loop reading STMFTS_READ_ALL_EVENT, which is the actual chip-level
+readiness signal.
+
+Signed-off-by: Miro Mraz <mraz.miro@seznam.cz>
+---
+ drivers/input/touchscreen/stmfts.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/input/touchscreen/stmfts.c b/drivers/input/touchscreen/stmfts.c
+index e613299e3..149c45c53 100644
+--- a/drivers/input/touchscreen/stmfts.c
++++ b/drivers/input/touchscreen/stmfts.c
+@@ -834,7 +834,7 @@ static void stmfts_reset(struct stmfts_data *sdata)
+ 	msleep(20);
+ 
+ 	gpiod_set_value_cansleep(sdata->reset_gpio, 0);
+-	msleep(50);
++	msleep(500); /* FTM5 fw boot takes >300ms before chip ACKs I2C */
+ }
+ 
+ static int stmfts_configure(struct stmfts_data *sdata)
+-- 
+2.54.0
+

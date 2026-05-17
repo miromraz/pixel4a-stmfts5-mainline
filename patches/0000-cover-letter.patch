@@ -1,0 +1,41 @@
+From: Miro Mraz <mraz.miro@seznam.cz>
+Subject: [PATCH 0/2] Pixel 4a (sunfish): enable FTM5 touchscreen on mainline
+
+This series sits on top of David Heidelberg's v4 stmfts5 series
+(20260409-stmfts5-v4-0-64fe62027db5@ixit.cz on linux-input). Both fixes
+were found while bringing up the touchscreen on a Google Pixel 4a
+(sunfish, FTM5CU56AA1BE, chip ID 0x4836) running postmarketOS with the
+sm7150-mainline 7.1-rc3 kernel.
+
+PATCH 1: Bumps the stmfts_reset post-deassert delay from 50 ms to 500 ms.
+FTM5 firmware boot includes internal CRC verification of flash sections
+and consistently takes ~300 ms before the chip's I2C state machine is
+up. 50 ms causes stmfts5_configure's I2C read to fail with -ENXIO
+silently (only the dev_dbg 'initializing...' line surfaces in dmesg).
+Diagnosed via ftrace function_graph + funcgraph-retval. A follow-up
+could replace the fixed sleep with a poll loop on STMFTS_READ_ALL_EVENT.
+
+PATCH 2: Adds the sunfish DTS node. Two non-obvious bits:
+  - vreg_touch_en (regulator-fixed on pm6150 GPIO 4) models the
+    downstream load-switch arrangement so the regulator framework
+    keeps the chip powered across probe-failure-and-retry cycles.
+  - mode-switch-gpios uses GPIO_ACTIVE_LOW (not HIGH). Empirically,
+    driving the line HIGH puts the chip into SLPI-routed mode where
+    the AP-side I2C address goes silent. LOW keeps it on the AP path.
+
+Tested on Pixel 4a. After the series boots, /dev/input/event2 ("stmfts")
+appears and reports MT_B touch events with correct X/Y inside the
+1080x2340 panel range.
+
+Signed-off-by: Miro Mraz <mraz.miro@seznam.cz>
+
+Miro Mraz (2):
+  Input: stmfts - extend post-reset delay to allow FTM5 firmware boot
+  arm64: dts: qcom: sm7150-google-sunfish: add stmfts5 touchscreen
+
+ arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts | 82 +++++++++++++++++++++-
+ drivers/input/touchscreen/stmfts.c                 |  2 +-
+ 2 files changed, 82 insertions(+), 2 deletions(-)
+
+-- 
+2.x

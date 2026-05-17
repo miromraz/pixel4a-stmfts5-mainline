@@ -1,0 +1,148 @@
+From ba8180fb188b971da3789cfd63e623da865ce2ac Mon Sep 17 00:00:00 2001
+From: Miro Mraz <mraz.miro@seznam.cz>
+Date: Mon, 18 May 2026 01:38:33 +0200
+Subject: [PATCH 2/2] arm64: dts: qcom: sm7150-google-sunfish: add stmfts5
+ touchscreen
+
+Add the FTM5CU56AA1BE touchscreen controller (chip ID 0x4836) at I2C
+address 0x49 on i2c8 (a84000.i2c). Reset is on TLMM GPIO 8, IRQ on
+TLMM GPIO 9 (active-low to AP), AP/SLPI mode-switch on TLMM GPIO 72.
+
+The touchscreen supply is gated by pm6150 GPIO 4 driving an external
+load switch. Downstream Android sets this once via pinctrl after boot;
+modeled here as a regulator-fixed (vreg_touch_en) so the regulator
+framework keeps it asserted across probe-failure-and-retry cycles. Both
+vdd-supply and avdd-supply point at vreg_touch_en because that single
+load switch provides everything the controller needs.
+
+The mode-switch GPIO needs careful polarity: empirically, signal HIGH
+puts the chip in SLPI-routed mode where the AP-side I2C address goes
+silent (chip disappears from both 0x49 and 0x4a in i2cdetect). Signal
+LOW keeps it on the AP path where the stmfts driver can reach it.
+Combined with the driver's GPIOD_OUT_HIGH initial state, this requires
+GPIO_ACTIVE_LOW so 'active' translates to signal LOW.
+
+Pinctrl explicitly programs gpio8 as a GPIO output driven high with a
+pull-up, so the chip is not held in reset when the line is released
+between driver lifecycle stages.
+
+Tested on Pixel 4a running postmarketOS with mainline kernel 7.1-rc3
+plus the stmfts5 series. After this patch, /dev/input/event2 appears
+as 'stmfts' on boot and reports MT_B touch events with correct X/Y
+within the 1080x2340 display range.
+
+Signed-off-by: Miro Mraz <mraz.miro@seznam.cz>
+---
+ .../boot/dts/qcom/sm7150-google-sunfish.dts   | 82 ++++++++++++++++++-
+ 1 file changed, 81 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts b/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
+index a9cde8dc7..760d56a72 100644
+--- a/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
++++ b/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
+@@ -171,6 +171,30 @@ vreg_lab: regulator-lab {
+ 		regulator-max-microvolt = <6100000>;
+ 	};
+ 
++	/*
++	 * pm6150 GPIO4 enables an external load switch that gates the
++	 * touchscreen analog/digital supply. Downstream simply pinctrl-
++	 * defaults it high after boot. Model it as an always-on regulator-
++	 * fixed so the line is driven by the regulator framework and stays
++	 * asserted regardless of the stmfts probe lifecycle.
++	 */
++	vreg_touch_en: regulator-touch-en {
++		compatible = "regulator-fixed";
++
++		regulator-name = "vreg_touch_en";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++
++		gpio = <&pm6150_gpios 4 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&touch_power_default>;
++
++		regulator-always-on;
++		regulator-boot-on;
++	};
++
+ 	// S3A is really mx.lvl but it's there for supply map completeness sake.
+ 	vreg_s3a_0p8: regulator-smpa3 {
+ 		compatible = "regulator-fixed";
+@@ -557,7 +581,37 @@ &i2c7 {
+ 	status = "okay";
+ 	clock-frequency = <1000000>;
+ 
+-	/* st,fts touchscreen@49 */
++	touchscreen@49 {
++		compatible = "st,stmfts5";
++		reg = <0x49>;
++
++		interrupts-extended = <&tlmm 9 IRQ_TYPE_LEVEL_LOW>;
++		reset-gpios = <&tlmm 8 GPIO_ACTIVE_LOW>;
++		/*
++		 * GPIO 72 routes the touch IRQ between the AP (active-low)
++		 * and SLPI (active-high). Mainline only services the AP path,
++		 * so the driver holds this deasserted (low) by default.
++		 */
++		mode-switch-gpios = <&tlmm 72 GPIO_ACTIVE_LOW>;
++
++		/*
++		 * Downstream Android does not model the touchscreen supplies
++		 * as regulators at all - it just asserts pm6150 GPIO4 high
++		 * via pinctrl, which feeds an external load switch that
++		 * provides everything the controller needs. We model that
++		 * load switch as vreg_touch_en and point both required
++		 * supplies at it so the regulator framework keeps the chip
++		 * powered across probe-failure-and-retry cycles.
++		 */
++		vdd-supply = <&vreg_touch_en>;
++		avdd-supply = <&vreg_touch_en>;
++
++		touchscreen-size-x = <1080>;
++		touchscreen-size-y = <2340>;
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&touch_irq_default &touch_reset_default>;
++	};
+ };
+ 
+ &i2c9 {
+@@ -838,6 +892,32 @@ rx-pins {
+ 			bias-pull-up;
+ 		};
+ 	};
++
++	touch_irq_default: touch-irq-default-state {
++		pins = "gpio9";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-disable;
++	};
++
++	touch_reset_default: touch-reset-default-state {
++		pins = "gpio8";
++		function = "gpio";
++		drive-strength = <2>;
++		bias-pull-up;
++		output-high;
++	};
++};
++
++&pm6150_gpios {
++	touch_power_default: touch-power-default-state {
++		pins = "gpio4";
++		function = "normal";
++		qcom,drive-strength = <2>;
++		power-source = <1>;
++		bias-disable;
++		output-high;
++	};
+ };
+ 
+ &uart3 {
+-- 
+2.54.0
+
