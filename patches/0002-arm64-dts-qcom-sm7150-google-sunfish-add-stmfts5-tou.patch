@@ -1,7 +1,7 @@
-From ba8180fb188b971da3789cfd63e623da865ce2ac Mon Sep 17 00:00:00 2001
+From 63ab42b8bd0c369e29c73235ed8be15baafc7d2a Mon Sep 17 00:00:00 2001
 From: Miro Mraz <mraz.miro@seznam.cz>
-Date: Mon, 18 May 2026 01:38:33 +0200
-Subject: [PATCH 2/2] arm64: dts: qcom: sm7150-google-sunfish: add stmfts5
+Date: Mon, 18 May 2026 11:56:51 +0200
+Subject: [PATCH v2 2/2] arm64: dts: qcom: sm7150-google-sunfish: add stmfts5
  touchscreen
 
 Add the FTM5CU56AA1BE touchscreen controller (chip ID 0x4836) at I2C

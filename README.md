@@ -7,21 +7,22 @@ postmarketOS.
 
 ## What's here
 
-### `patches/` — kernel patch series
+### `patches/` — kernel patch series (v2)
 
 Applies on top of David Heidelberg's stmfts5 v4 series (Message-Id:
 `<20260409-stmfts5-v4-0-64fe62027db5@ixit.cz>`,
 [lore link](https://lore.kernel.org/lkml/20260409-stmfts5-v4-0-64fe62027db5@ixit.cz/)).
 
-- **0001** — `Input: stmfts - extend post-reset delay to allow FTM5 firmware boot`
-  Bumps `stmfts_reset()`'s post-deassert sleep from 50 ms to 500 ms. FTM5
-  firmware boot includes internal CRC verification of flash sections and
-  consistently takes ~300 ms before the chip's I2C state machine is up.
-  Symptom: probe failed with `-ENXIO` inside `stmfts5_configure` and
-  `dmesg` only showed the `dev_dbg` "initializing..." line. Diagnosed
-  via `ftrace function_graph` with `funcgraph-retval`. A poll-until-ready
-  loop reading `STMFTS_READ_ALL_EVENT` would be cleaner long-term — happy
-  to send a v2 if preferred.
+- **0001** — `Input: stmfts - poll for chip ready in stmfts5_configure`
+  Replaces the single I2C read after reset with a poll loop (retry every
+  25 ms, up to ~500 ms total). FTM5 firmware boot includes internal CRC
+  verification and can take several hundred ms before the chip's I2C
+  state machine begins ACKing — too long for the existing fixed 50 ms
+  delay in `stmfts_reset`. Polling avoids penalising every probe with a
+  worst-case sleep. Symptom diagnosed via `ftrace function_graph` with
+  `funcgraph-retval` (failing `__i2c_transfer` returned `-6` directly;
+  `dmesg` surfaced no error of its own). Approach inspired by map220v's
+  downstream sm7125 driver.
 
 - **0002** — `arm64: dts: qcom: sm7150-google-sunfish: add stmfts5 touchscreen`
   Adds the touchscreen node, vreg_touch_en (regulator-fixed on pm6150 GPIO 4
@@ -47,6 +48,15 @@ protocol if anyone wants to add `request_firmware`-based loading to the
 kernel driver in a future round. See `userspace-flasher/README.md` for
 how to build/use.
 
+## Version history
+
+- **v1** (earlier commit): used `msleep(500)` in `stmfts_reset`. David
+  pointed out the fixed sleep is wasteful and noted that the downstream
+  driver (map220v/sm7125-mainline) reads chip state during the wait
+  instead of blocking.
+- **v2** (current): polling loop in `stmfts5_configure` — average-case
+  zero added delay, worst case bounded at 500 ms.
+
 ## End-to-end result
 
 After applying the patches and booting on Pixel 4a:
@@ -64,5 +74,5 @@ the 1080x2340 panel range.
 
 ## Status
 
-Posted to David Heidelberg (author of the stmfts5 series) for review
-before mainline submission, May 2026.
+v2 posted to David Heidelberg for review after his v1 feedback,
+May 2026.
