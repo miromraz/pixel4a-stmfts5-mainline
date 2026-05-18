@@ -1,41 +1,64 @@
 From: Miro Mraz <mraz.miro@seznam.cz>
-Subject: [PATCH 0/2] Pixel 4a (sunfish): enable FTM5 touchscreen on mainline
+Subject: [PATCH v3 0/2] Pixel 4a (sunfish): enable FTM5 touchscreen on mainline
 
-This series sits on top of David Heidelberg's v4 stmfts5 series
+Sits on top of David Heidelberg's v4 stmfts5 series
 (20260409-stmfts5-v4-0-64fe62027db5@ixit.cz on linux-input). Both fixes
 were found while bringing up the touchscreen on a Google Pixel 4a
 (sunfish, FTM5CU56AA1BE, chip ID 0x4836) running postmarketOS with the
 sm7150-mainline 7.1-rc3 kernel.
 
-PATCH 1: Bumps the stmfts_reset post-deassert delay from 50 ms to 500 ms.
-FTM5 firmware boot includes internal CRC verification of flash sections
-and consistently takes ~300 ms before the chip's I2C state machine is
-up. 50 ms causes stmfts5_configure's I2C read to fail with -ENXIO
-silently (only the dev_dbg 'initializing...' line surfaces in dmesg).
-Diagnosed via ftrace function_graph + funcgraph-retval. A follow-up
-could replace the fixed sleep with a poll loop on STMFTS_READ_ALL_EVENT.
+PATCH 1 (driver):
+  Replaces the single I2C read after reset with a poll loop in
+  stmfts5_configure. The chip's firmware boot includes internal CRC
+  verification of flash sections and can take a few hundred ms before
+  its I2C state machine ACKs; the single read races the firmware and
+  loses, returning -ENXIO silently. Polling at 25 ms intervals for up
+  to ~500 ms exits the moment CONTROLLER_READY arrives (average-case
+  zero added delay) and -ETIMEDOUT cleanly in the bad case.
 
-PATCH 2: Adds the sunfish DTS node. Two non-obvious bits:
-  - vreg_touch_en (regulator-fixed on pm6150 GPIO 4) models the
-    downstream load-switch arrangement so the regulator framework
-    keeps the chip powered across probe-failure-and-retry cycles.
-  - mode-switch-gpios uses GPIO_ACTIVE_LOW (not HIGH). Empirically,
-    driving the line HIGH puts the chip into SLPI-routed mode where
-    the AP-side I2C address goes silent. LOW keeps it on the AP path.
+  Empirical aside in the commit body: on this chip the
+  STMFTS_READ_ONE_EVENT register (0x85) never returns event data on a
+  first post-reset read; only STMFTS_READ_ALL_EVENT (0x86) does. v4
+  already uses 0x86 here, so this preserves that choice — flagging it
+  in case anyone else tries to "simplify" to 0x85 later.
 
-Tested on Pixel 4a. After the series boots, /dev/input/event2 ("stmfts")
-appears and reports MT_B touch events with correct X/Y inside the
-1080x2340 panel range.
+PATCH 2 (DT):
+  Adds the sunfish DTS node and pinctrl. Two non-obvious bits:
+  - VDD and AVDD are separate physical supplies sharing rails with the
+    OLED panel (touch and display are one bonded assembly). VDD comes
+    from vreg_l13a_1p8 (display vddio), AVDD from vreg_l7c_3p0 (display
+    vdda-3p3). PM6150 GPIO 4 enables an external load switch upstream
+    of these rails and is asserted via pinctrl rather than as a
+    regulator-fixed, since the shared OLED supplies are already always
+    on when the touchscreen probes.
+  - mode-switch-gpios uses GPIO_ACTIVE_LOW. Empirically, driving the
+    line HIGH puts the chip into SLPI-routed mode where the AP-side
+    I2C address goes silent. LOW keeps it on the AP path.
+
+End-to-end on Pixel 4a: with v4 + this series + Session A's PM6150
+charger/qgauge DT changes, the device boots and the user can navigate
+the postmarketOS UI by touch while charging works concurrently. The
+combined kernel branch lives at:
+  https://github.com/miromraz/linux/tree/sunfish-mainline
+
+Change log:
+  v3: address review of v1 — vreg_touch_en split into proper vdd/avdd
+      supplies (David's feedback that "vreg_touch_en is not both digital
+      vdd and analog avdd"); 500 ms blocking sleep replaced with the
+      poll loop in PATCH 1 (David's feedback that the downstream driver
+      reads chip state during the wait rather than blocking).
+  v2: poll loop only; DTS unchanged.
+  v1: initial post.
 
 Signed-off-by: Miro Mraz <mraz.miro@seznam.cz>
 
 Miro Mraz (2):
-  Input: stmfts - extend post-reset delay to allow FTM5 firmware boot
-  arm64: dts: qcom: sm7150-google-sunfish: add stmfts5 touchscreen
+  Input: stmfts - poll for CONTROLLER_READY event in stmfts5_configure
+  arm64: dts: qcom: sm7150-sunfish: add STMicro FTM5 touchscreen
 
- arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts | 82 +++++++++++++++++++++-
- drivers/input/touchscreen/stmfts.c                 |  2 +-
- 2 files changed, 82 insertions(+), 2 deletions(-)
+ arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts | 59 +++++++++++++++++-
+ drivers/input/touchscreen/stmfts.c                 | 28 +++++++--
+ 2 files changed, 82 insertions(+), 5 deletions(-)
 
--- 
+--
 2.x

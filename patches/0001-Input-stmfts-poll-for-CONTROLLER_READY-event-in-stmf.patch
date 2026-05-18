@@ -1,0 +1,73 @@
+From: Miro Mraz <mraz.miro@seznam.cz>
+Date: Mon, 18 May 2026 02:10:00 +0200
+Subject: [PATCH v3] Input: stmfts - poll for CONTROLLER_READY event in
+ stmfts5_configure
+
+Poll the chip's event FIFO for the CONTROLLER_READY (0x03) event after
+reset instead of issuing a single read after a fixed sleep. FTM5
+firmware boot includes internal CRC verification of flash sections and
+can take several hundred ms before the chip's I2C state machine is up;
+a fixed worst-case sleep would penalise every probe, while the original
+single-read pattern races the firmware and returns garbage when it
+loses.
+
+Polling exits as soon as READY arrives (average-case zero added delay)
+and bails out cleanly with -ETIMEDOUT after ~500 ms in the bad case.
+
+Key empirical finding worth noting in case it surprises future debuggers:
+on FTM5CU56AA1BE (chip ID 0x4836, on Pixel 4a), the
+STMFTS_READ_ONE_EVENT (0x85) register never returns event data on the
+first post-reset read — only STMFTS_READ_ALL_EVENT (0x86) does. The
+existing v4 code already uses 0x86 here, so this change preserves that
+choice.
+
+Approach inspired by Samsung's downstream ftm4_ts.c::fts_wait_for_ready
+and map220v's sm7125-mainline downstream stmfts driver.
+
+Signed-off-by: Miro Mraz <mraz.miro@seznam.cz>
+---
+ drivers/input/touchscreen/stmfts.c | 28 ++++++++++++++++++++++++----
+ 1 file changed, 23 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/input/touchscreen/stmfts.c b/drivers/input/touchscreen/stmfts.c
+--- a/drivers/input/touchscreen/stmfts.c
++++ b/drivers/input/touchscreen/stmfts.c
+@@ -921,13 +921,31 @@ static int stmfts_power_on(struct stmfts_data *sdata)
+ static int stmfts5_configure(struct stmfts_data *sdata)
+ {
+ 	u8 event[STMFTS_EVENT_SIZE];
+-	int ret;
++	int ret, retries;
+
+-	/* Verify I2C communication */
+-	ret = i2c_smbus_read_i2c_block_data(sdata->client,
+-					    STMFTS_READ_ALL_EVENT,
+-					    sizeof(event), event);
+-	if (ret < 0)
++	/*
++	 * After reset, wait for the chip to post the CONTROLLER_READY event.
++	 * FTM5 firmware boot includes internal CRC verification of flash
++	 * sections and can take a few hundred ms before the chip's I2C state
++	 * machine is up; a fixed post-reset sleep large enough to cover the
++	 * worst case would penalise every probe.  Poll the event FIFO at
++	 * 25ms intervals for up to ~500ms; bail out early once READY arrives.
++	 */
++	for (retries = 0; retries < 20; retries++) {
++		ret = i2c_smbus_read_i2c_block_data(sdata->client,
++						    STMFTS_READ_ALL_EVENT,
++						    sizeof(event), event);
++		if (ret >= 0 && event[0] == STMFTS5_EV_CONTROLLER_READY)
++			break;
++		msleep(25);
++	}
++	if (ret < 0)
+ 		return ret;
++	if (event[0] != STMFTS5_EV_CONTROLLER_READY) {
++		dev_err(&sdata->client->dev,
++			"timed out waiting for CONTROLLER_READY (last event 0x%02x)\n",
++			event[0]);
++		return -ETIMEDOUT;
++	}
+
+ 	enable_irq(sdata->client->irq);
+
