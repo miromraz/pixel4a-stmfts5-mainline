@@ -1,12 +1,15 @@
-From d9c48fc15805a1256eb2cccb603d93ce0d23ed99 Mon Sep 17 00:00:00 2001
-From: miromraz <mraz.miro@seznam.cz>
+From 4db9212c11520a38ace71e2148f08c0825adcea9 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Miroslav=20Mr=C3=A1z?= <mraz.miro@seznam.cz>
 Date: Mon, 18 May 2026 17:37:35 +0200
-Subject: [PATCH v3] arm64: dts: qcom: sm7150-sunfish: add STMicro FTM5
+Subject: [PATCH v4] arm64: dts: qcom: sm7150-sunfish: add STMicro FTM5
  touchscreen
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Add the touchscreen node and supporting pinctrl for the bonded
 display/touch assembly on the Google Pixel 4a (sunfish). The chip is
-reachable on i2c4 at address 0x49, asserts an active-low interrupt on
+reachable on i2c7 at address 0x49, asserts an active-low interrupt on
 tlmm GPIO 9, and exposes a reset line on tlmm GPIO 8 used by the
 driver to bring the firmware up cleanly after power is applied.
 
@@ -25,16 +28,16 @@ The compatible 'st,stmfts5' and the optional reset/mode-switch GPIO
 bindings come from David Heidelberg's stmfts5 v4 series
 (Message-Id: <20260409-stmfts5-v4-0-64fe62027db5@ixit.cz>).
 
-Signed-off-by: miromraz <mraz.miro@seznam.cz>
+Signed-off-by: Miroslav Mráz <mraz.miro@seznam.cz>
 ---
- .../boot/dts/qcom/sm7150-google-sunfish.dts   | 59 ++++++++++++++++++-
- 1 file changed, 58 insertions(+), 1 deletion(-)
+ .../boot/dts/qcom/sm7150-google-sunfish.dts   | 44 ++++++++++++++++++-
+ 1 file changed, 43 insertions(+), 1 deletion(-)
 
 diff --git a/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts b/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
-index c32733862..52d20b9c7 100644
+index c32733862..61b5911c9 100644
 --- a/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
 +++ b/arch/arm64/boot/dts/qcom/sm7150-google-sunfish.dts
-@@ -573,7 +573,38 @@ &i2c7 {
+@@ -573,7 +573,23 @@ &i2c7 {
  	status = "okay";
  	clock-frequency = <1000000>;
  
@@ -45,25 +48,10 @@ index c32733862..52d20b9c7 100644
 +
 +		interrupts-extended = <&tlmm 9 IRQ_TYPE_LEVEL_LOW>;
 +		reset-gpios = <&tlmm 8 GPIO_ACTIVE_LOW>;
-+
-+		/*
-+		 * GPIO 72 routes the touch IRQ between the AP (active-low)
-+		 * and SLPI (active-high). Mainline only services the AP path,
-+		 * so the driver holds this deasserted (low) by default.
-+		 */
 +		mode-switch-gpios = <&tlmm 72 GPIO_ACTIVE_LOW>;
 +
-+		/*
-+		 * VDD (digital, 1.8V) and AVDD (analog, 3.0V) are separate
-+		 * physical supplies on the chip.  Downstream Android documents
-+		 * the mapping in a commented-out hint in its sunfish DT, and
-+		 * the rails are shared with the OLED panel (touch and display
-+		 * are one bonded assembly).  pm6150 GPIO 4 enables an external
-+		 * load switch upstream of these rails; it is asserted via
-+		 * pinctrl below.
-+		 */
-+		vdd-supply  = <&vreg_l13a_1p8>;	/* 1.8V digital, shared with display vddio */
-+		avdd-supply = <&vreg_l7c_3p0>;	/* 3.0V analog,  shared with display vdda-3p3 */
++		vdd-supply = <&vreg_l13a_1p8>;
++		avdd-supply = <&vreg_l7c_3p0>;
 +
 +		touchscreen-size-x = <1080>;
 +		touchscreen-size-y = <2340>;
@@ -74,7 +62,25 @@ index c32733862..52d20b9c7 100644
  };
  
  &i2c9 {
-@@ -870,6 +901,32 @@ rx-pins {
+@@ -663,6 +679,17 @@ &pm6150_charger {
+ 	status = "okay";
+ };
+ 
++&pm6150_gpios {
++	touch_power_default: touch-power-default-state {
++		pins = "gpio4";
++		function = "normal";
++		qcom,drive-strength = <2>;
++		power-source = <1>;
++		bias-disable;
++		output-high;
++	};
++};
++
+ &pm6150_qgauge {
+ 	monitored-battery = <&battery>;
+ 	power-supplies = <&pm6150_charger>;
+@@ -870,6 +897,21 @@ rx-pins {
  			bias-pull-up;
  		};
  	};
@@ -91,17 +97,6 @@ index c32733862..52d20b9c7 100644
 +		function = "gpio";
 +		drive-strength = <2>;
 +		bias-pull-up;
-+		output-high;
-+	};
-+};
-+
-+&pm6150_gpios {
-+	touch_power_default: touch-power-default-state {
-+		pins = "gpio4";
-+		function = "normal";
-+		qcom,drive-strength = <2>;
-+		power-source = <1>;
-+		bias-disable;
 +		output-high;
 +	};
  };

@@ -1,4 +1,4 @@
-From: Miro Mraz <mraz.miro@seznam.cz>
+From: Miroslav Mráz <mraz.miro@seznam.cz>
 Date: Mon, 18 May 2026 02:10:00 +0200
 Subject: [PATCH v3] Input: stmfts - poll for CONTROLLER_READY event in
  stmfts5_configure
@@ -24,7 +24,7 @@ choice.
 Approach inspired by Samsung's downstream ftm4_ts.c::fts_wait_for_ready
 and map220v's sm7125-mainline downstream stmfts driver.
 
-Signed-off-by: Miro Mraz <mraz.miro@seznam.cz>
+Signed-off-by: Miroslav Mráz <mraz.miro@seznam.cz>
 ---
  drivers/input/touchscreen/stmfts.c | 28 ++++++++++++++++++++++++----
  1 file changed, 23 insertions(+), 5 deletions(-)

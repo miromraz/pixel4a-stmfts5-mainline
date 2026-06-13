@@ -1,4 +1,4 @@
-From: Miro Mraz <mraz.miro@seznam.cz>
+From: Miroslav Mráz <mraz.miro@seznam.cz>
 Subject: [PATCH v3 0/2] Pixel 4a (sunfish): enable FTM5 touchscreen on mainline
 
 Sits on top of David Heidelberg's v4 stmfts5 series
@@ -50,9 +50,9 @@ Change log:
   v2: poll loop only; DTS unchanged.
   v1: initial post.
 
-Signed-off-by: Miro Mraz <mraz.miro@seznam.cz>
+Signed-off-by: Miroslav Mráz <mraz.miro@seznam.cz>
 
-Miro Mraz (2):
+Miroslav Mráz (2):
   Input: stmfts - poll for CONTROLLER_READY event in stmfts5_configure
   arm64: dts: qcom: sm7150-sunfish: add STMicro FTM5 touchscreen
 
