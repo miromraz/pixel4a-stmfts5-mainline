@@ -102,3 +102,8 @@ Branch base: `sm7150-mainline/linux` v7.1-rc3.
 ## Status
 
 v3 ready to post to David Heidelberg, May 2026.
+
+## License
+
+GNU General Public License, version 2. See [LICENSE](LICENSE). The patches in
+`patches/` are Linux kernel contributions and follow the kernel's GPL-2.0 licensing.
